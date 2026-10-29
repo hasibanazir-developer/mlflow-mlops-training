@@ -1,5 +1,18 @@
+# Python environment
 mlflow-env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# MLflow local data
 mlflow.db
 mlruns/
-__pycache__/
-*.pyc
+mlartifacts/
+
+# Secrets
+.env
+
+# IDE files
+.vscode/
+.idea/
