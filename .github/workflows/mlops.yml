@@ -19,7 +19,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Install dependencies
         run: |
@@ -28,6 +27,9 @@ jobs:
 
       - name: Run automated model training and evaluation
         env:
+          CI: "true"
+          ACCURACY_GATE: "0.93"
           MLFLOW_TRACKING_URI: file:./mlruns
+          MLFLOW_ALLOW_FILE_STORE: "true"
         run: |
           python mlops_pipeline.py

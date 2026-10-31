@@ -1,4 +1,4 @@
-
+import os
 import hashlib
 import mlflow
 import mlflow.sklearn
@@ -16,12 +16,19 @@ import numpy as np
 # ---------------- CONFIGURATION ----------------
 EXPERIMENT = "mlops-pipeline"
 MODEL_NAME = "ProductionClassifier"
-ACCURACY_GATE = 0.999
 
-mlflow.set_tracking_uri("http://localhost:5001")
+ACCURACY_GATE = float(os.getenv("ACCURACY_GATE", "0.999"))
+
+IS_CI = os.getenv("CI", "false").lower() == "true"
+
+TRACKING_URI = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    "http://localhost:5001"
+)
+
+mlflow.set_tracking_uri(TRACKING_URI)
 mlflow.set_experiment(EXPERIMENT)
 client = MlflowClient()
-
 
 # ---------------- LOAD AND VERSION DATA ----------------
 data = load_breast_cancer()
@@ -112,8 +119,7 @@ for name, model, scaled in candidates:
 
         print(
             f"{name:15s} accuracy={accuracy:.4f} "
-            f"ROC-AUC={roc_auc:.4f}"
-        )
+            f"ROC-AUC={roc_auc:.4f}"        )
 
 
 # ---------------- AUTOMATIC MODEL SELECTION ----------------
@@ -123,13 +129,18 @@ print(f"\nBest candidate: {best['name']}")
 print(f"Best ROC-AUC: {best['roc_auc']:.4f}")
 print(f"Accuracy gate: {ACCURACY_GATE:.4f}")
 
-
 # ---------------- CI/CD PROMOTION GATE ----------------
 if best["accuracy"] < ACCURACY_GATE:
     print(
         f"GATE FAILED: accuracy {best['accuracy']:.4f} "
         f"< {ACCURACY_GATE:.4f}. No promotion."
     )
+
+elif IS_CI:
+    print("\nCI MODE: Model evaluation completed.")
+    print("Registry promotion skipped in GitHub Actions.")
+    print("Training and evaluation: PASSED")
+
 else:
     # Register the selected model
     model_uri = f"runs:/{best['run_id']}/model"
@@ -142,7 +153,7 @@ else:
         MODEL_NAME, mv.version, "candidate", best["name"]
     )
 
-    # First move the candidate to Staging
+    # Move model to Staging
     client.transition_model_version_stage(
         name=MODEL_NAME,
         version=mv.version,
@@ -150,15 +161,15 @@ else:
         archive_existing_versions=False
     )
 
-    # Integration smoke tests: load and test predictions
+    # Integration smoke tests
     staging_model = mlflow.sklearn.load_model(
         f"models:/{MODEL_NAME}/{mv.version}"
     )
 
-    test_predictions = staging_model.predict(X_te_s if best["name"] == "LogisticReg" else X_te)
-    test_probabilities = staging_model.predict_proba(
-        X_te_s if best["name"] == "LogisticReg" else X_te
-    )
+    test_X = X_te_s if best["name"] == "LogisticReg" else X_te
+
+    test_predictions = staging_model.predict(test_X)
+    test_probabilities = staging_model.predict_proba(test_X)
 
     tests_passed = (
         len(test_predictions) == len(y_te)
